@@ -6,8 +6,8 @@ let activePaneId = 1;
 let splitMode = false;
 
 const panesState = {
-    1: { pdfDoc: null, pageNum: 1, scale: 1.0, baseScale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas1'), wrapper: document.getElementById('wrapper1'), posX: 0, posY: 0 },
-    2: { pdfDoc: null, pageNum: 1, scale: 1.0, baseScale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas2'), wrapper: document.getElementById('wrapper2'), posX: 0, posY: 0 }
+    1: { pdfDoc: null, pageNum: 1, scale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas1'), wrapper: document.getElementById('wrapper1'), posX: 0, posY: 0 },
+    2: { pdfDoc: null, pageNum: 1, scale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas2'), wrapper: document.getElementById('wrapper2'), posX: 0, posY: 0 }
 };
 
 const sidebar = document.getElementById('sidebar');
@@ -23,12 +23,9 @@ async function initApp() {
 
 async function saveVFS() { await localforage.setItem('vfs', virtualFileSystem); }
 
-// --- UI / Sidebar Logic ---
+// --- UI Logic & Fullscreen ---
 document.getElementById('menuToggle').onclick = () => sidebar.classList.add('open');
 document.getElementById('closeSidebar').onclick = () => sidebar.classList.remove('open');
-document.getElementById('viewerArea').onclick = (e) => {
-    if(window.innerWidth < 768 && !e.target.closest('.fab')) sidebar.classList.remove('open');
-};
 
 document.getElementById('splitScreenBtn').onclick = () => {
     splitMode = !splitMode;
@@ -37,12 +34,30 @@ document.getElementById('splitScreenBtn').onclick = () => {
     setActivePane(splitMode ? 2 : 1);
 };
 
+// Fullscreen Logic
+document.getElementById('fullScreenBtn').onclick = () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+    }
+};
+
+document.getElementById('exitFullScreenBtn').onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+};
+
+document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
+        document.body.classList.add('fullscreen-active');
+        document.getElementById('exitFullScreenBtn').classList.remove('hidden');
+    } else {
+        document.body.classList.remove('fullscreen-active');
+        document.getElementById('exitFullScreenBtn').classList.add('hidden');
+    }
+});
+
 document.getElementById('resetZoomBtn').onclick = () => {
     if(panesState[activePaneId].pdfDoc) {
-        panesState[activePaneId].scale = panesState[activePaneId].baseScale;
-        panesState[activePaneId].posX = 0;
-        panesState[activePaneId].posY = 0;
-        renderPage(activePaneId, true);
+        fitToScreen(activePaneId);
     }
 };
 
@@ -53,27 +68,21 @@ window.setActivePane = function(paneId) {
     document.getElementById(`pane${paneId}`).classList.add('active-pane');
 };
 
-// View Toggles
 document.getElementById('listViewBtn').onclick = () => { fileTree.className = 'file-tree list-view'; document.getElementById('listViewBtn').classList.add('active'); document.getElementById('gridViewBtn').classList.remove('active'); };
 document.getElementById('gridViewBtn').onclick = () => { fileTree.className = 'file-tree grid-view'; document.getElementById('gridViewBtn').classList.add('active'); document.getElementById('listViewBtn').classList.remove('active'); };
 
-
-// --- Upload Multiple Files ---
 document.getElementById('uploadFab').onclick = () => document.getElementById('fileInput').click();
 
 document.getElementById('fileInput').onchange = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-
     for (let file of files) {
         const fileId = 'file_' + Date.now() + Math.floor(Math.random()*1000);
         const arrayBuffer = await file.arrayBuffer();
         await localforage.setItem(fileId, arrayBuffer);
-        
         if(!virtualFileSystem[currentPath]) virtualFileSystem[currentPath] = {};
         virtualFileSystem[currentPath][fileId] = { name: file.name, type: 'pdf' };
     }
-    
     await saveVFS();
     renderFileTree();
 };
@@ -87,7 +96,7 @@ document.getElementById('newFolderBtn').onclick = () => {
     }
 };
 
-// --- Render File Tree with Drag & Drop ---
+// --- File Tree Rendering (Fixed Click Areas) ---
 function renderFileTree() {
     fileTree.innerHTML = '';
     const goBackBtn = document.getElementById('goBackBtn');
@@ -106,12 +115,11 @@ function renderFileTree() {
             if (key === "root") return;
             const div = document.createElement('div');
             div.className = 'item folder';
-            // Drop zone logic
-            div.ondragover = (e) => e.preventDefault();
-            div.ondrop = (e) => handleDrop(e, key);
+            // Click anywhere on the row except the 3 dots
+            div.onclick = (e) => { if(!e.target.closest('.item-actions')) openFolder(key); };
             
             div.innerHTML = `
-                <div class="item-info" onclick="openFolder('${key}')"><span class="material-icons">folder</span> <span class="name">${key}</span></div>
+                <div class="item-info"><span class="material-icons">folder</span> <span class="name">${key}</span></div>
                 <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${key}', '${key}', 'folder')">more_vert</span></div>
             `;
             fileTree.appendChild(div);
@@ -121,49 +129,26 @@ function renderFileTree() {
     Object.entries(currentItems).forEach(([id, meta]) => {
         const div = document.createElement('div');
         div.className = 'item file';
-        // Drag logic
-        div.draggable = true;
-        div.ondragstart = (e) => e.dataTransfer.setData('text/plain', id);
+        // Click anywhere on the row except the 3 dots
+        div.onclick = (e) => { if(!e.target.closest('.item-actions')) openFile(id); };
 
         div.innerHTML = `
-            <div class="item-info" onclick="openFile('${id}')"><span class="material-icons">picture_as_pdf</span> <span class="name">${meta.name}</span></div>
+            <div class="item-info"><span class="material-icons">picture_as_pdf</span> <span class="name">${meta.name}</span></div>
             <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${id}', '${meta.name}', 'file')">more_vert</span></div>
         `;
         fileTree.appendChild(div);
     });
 }
 
-window.openFolder = function(folderName) {
-    currentPath = folderName;
-    renderFileTree();
-};
+window.openFolder = function(folderName) { currentPath = folderName; renderFileTree(); };
+window.openFile = function(fileId) { loadPdfToActivePane(fileId); if(window.innerWidth < 768) sidebar.classList.remove('open'); };
 
-window.openFile = function(fileId) {
-    loadPdfToActivePane(fileId);
-    if(window.innerWidth < 768) sidebar.classList.remove('open');
-};
-
-function handleDrop(e, targetFolder) {
-    e.preventDefault();
-    const fileId = e.dataTransfer.getData('text/plain');
-    if(fileId && virtualFileSystem["root"][fileId]) {
-        virtualFileSystem[targetFolder][fileId] = virtualFileSystem["root"][fileId];
-        delete virtualFileSystem["root"][fileId];
-        saveVFS();
-        renderFileTree();
-    }
-}
-
-// --- Context Menu Logic (Files & Folders) ---
-let selectedItemId = null;
-let selectedItemType = null;
-let selectedItemName = null;
+// --- Context Menu & Move Logic ---
+let selectedItemId = null, selectedItemType = null, selectedItemName = null;
 
 window.showContextMenu = function(e, id, name, type) {
     e.stopPropagation();
-    selectedItemId = id;
-    selectedItemType = type;
-    selectedItemName = name;
+    selectedItemId = id; selectedItemType = type; selectedItemName = name;
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -172,37 +157,27 @@ window.showContextMenu = function(e, id, name, type) {
 document.addEventListener('click', () => contextMenu.classList.add('hidden'));
 
 document.getElementById('menuDelete').onclick = async () => {
-    if(confirm('האם אתה בטוח שברצונך למחוק?')) {
+    if(confirm('למחוק?')) {
         if(selectedItemType === 'file') {
             delete virtualFileSystem[currentPath][selectedItemId];
             await localforage.removeItem(selectedItemId);
         } else {
-            // Delete folder and its contents
-            for(let fId in virtualFileSystem[selectedItemId]) {
-                await localforage.removeItem(fId);
-            }
+            for(let fId in virtualFileSystem[selectedItemId]) await localforage.removeItem(fId);
             delete virtualFileSystem[selectedItemId];
         }
-        await saveVFS();
-        renderFileTree();
+        await saveVFS(); renderFileTree();
     }
 };
 
 document.getElementById('menuRename').onclick = async () => {
     const newName = prompt('הכנס שם חדש:', selectedItemName);
     if(newName) {
-        if(selectedItemType === 'file') {
-            virtualFileSystem[currentPath][selectedItemId].name = newName;
-        } else {
-            virtualFileSystem[newName] = virtualFileSystem[selectedItemId];
-            delete virtualFileSystem[selectedItemId];
-        }
-        await saveVFS();
-        renderFileTree();
+        if(selectedItemType === 'file') virtualFileSystem[currentPath][selectedItemId].name = newName;
+        else { virtualFileSystem[newName] = virtualFileSystem[selectedItemId]; delete virtualFileSystem[selectedItemId]; }
+        await saveVFS(); renderFileTree();
     }
 };
 
-// Move Logic
 document.getElementById('menuMove').onclick = () => {
     if(selectedItemType === 'folder') return alert('לא ניתן להזיז תיקיות כרגע.');
     const select = document.getElementById('folderSelect');
@@ -219,48 +194,54 @@ document.getElementById('confirmMoveBtn').onclick = async () => {
     if(targetFolder !== currentPath) {
         virtualFileSystem[targetFolder][selectedItemId] = virtualFileSystem[currentPath][selectedItemId];
         delete virtualFileSystem[currentPath][selectedItemId];
+        currentPath = targetFolder; // Jump to target folder
         await saveVFS();
         renderFileTree();
     }
     moveModal.classList.add('hidden');
 };
 
-// --- PDF Engine & Advanced Pinch-to-Zoom ---
+// --- Rock Solid PDF Engine & Pinch-to-Zoom Math ---
 async function loadPdfToActivePane(fileId) {
     const state = panesState[activePaneId];
     try {
         const fileData = await localforage.getItem(fileId);
         if (!fileData) return;
-
         const loadingTask = pdfjsLib.getDocument({ data: fileData });
         state.pdfDoc = await loadingTask.promise;
         state.pageNum = 1;
-        
-        // Calculate fit-to-screen scale
-        const page = await state.pdfDoc.getPage(1);
-        const unscaledViewport = page.getViewport({ scale: 1 });
-        const wrapperRect = state.wrapper.getBoundingClientRect();
-        
-        // Ensure it fits exactly 100% of the visible area
-        const scaleToFit = Math.min(wrapperRect.width / unscaledViewport.width, wrapperRect.height / unscaledViewport.height);
-        
-        state.baseScale = scaleToFit;
-        state.scale = scaleToFit;
-        state.posX = 0; 
-        state.posY = 0;
-        
+        fitToScreen(activePaneId);
         setupTouchGestures(activePaneId);
-        renderPage(activePaneId, true);
     } catch (error) { console.error("PDF Error:", error); }
 }
 
-async function renderPage(paneId, forceHighRes = false) {
+async function fitToScreen(paneId) {
+    const state = panesState[paneId];
+    const page = await state.pdfDoc.getPage(1);
+    const unscaledViewport = page.getViewport({ scale: 1 });
+    const wrapperRect = state.wrapper.getBoundingClientRect();
+    
+    // Fit to width or height perfectly
+    const scaleToFit = Math.min(wrapperRect.width / unscaledViewport.width, wrapperRect.height / unscaledViewport.height);
+    
+    state.scale = scaleToFit;
+    state.currentScale = 1.0;
+    
+    // Center it
+    state.posX = (wrapperRect.width - (unscaledViewport.width * scaleToFit)) / 2;
+    state.posY = (wrapperRect.height - (unscaledViewport.height * scaleToFit)) / 2;
+    
+    renderPage(paneId);
+}
+
+async function renderPage(paneId) {
     const state = panesState[paneId];
     if (!state.pdfDoc) return;
 
     const page = await state.pdfDoc.getPage(state.pageNum);
-    // Render at a higher resolution (x2) to keep text sharp even while zooming in CSS
-    const renderScale = forceHighRes ? state.scale * 2 : state.scale; 
+    
+    // We render at the exact scale we need for crystal clear quality
+    const renderScale = state.scale * state.currentScale; 
     const viewport = page.getViewport({ scale: renderScale });
 
     const canvas = state.canvas;
@@ -269,44 +250,28 @@ async function renderPage(paneId, forceHighRes = false) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     
-    // The CSS width defines the actual display size, while canvas.width is the high-res buffer
-    const displayWidth = viewport.width / (forceHighRes ? 2 : 1);
-    const displayHeight = viewport.height / (forceHighRes ? 2 : 1);
-    canvas.style.width = displayWidth + "px";
-    canvas.style.height = displayHeight + "px";
+    // Reset CSS sizing to match physical rendering
+    canvas.style.width = viewport.width + "px";
+    canvas.style.height = viewport.height + "px";
     
-    // Apply transforms
-    applyTransform(state);
+    applyTransform(state, true); // True means reset CSS scale to 1 because it's baked into the render
 
     await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 }
 
-function applyTransform(state) {
-    // Keep image within wrapper bounds to prevent black screen / disappearing
-    const wrapperRect = state.wrapper.getBoundingClientRect();
-    const canvasWidth = parseFloat(state.canvas.style.width) * state.currentScale;
-    const canvasHeight = parseFloat(state.canvas.style.height) * state.currentScale;
-
-    // Boundaries clamping (prevents throwing the image off screen)
-    const margin = 50; // Allow 50px of drag past the edge
-    const minX = Math.min(0, wrapperRect.width - canvasWidth) - margin;
-    const maxX = margin;
-    const minY = Math.min(0, wrapperRect.height - canvasHeight) - margin;
-    const maxY = margin;
-
-    state.posX = Math.max(minX, Math.min(maxX, state.posX));
-    state.posY = Math.max(minY, Math.min(maxY, state.posY));
-
-    state.canvas.style.transform = `translate(${state.posX}px, ${state.posY}px) scale(${state.currentScale})`;
+function applyTransform(state, rendered = false) {
+    // If rendered = true, the scale is baked into the canvas.width, so CSS scale is 1.
+    // Otherwise, we are mid-pinch, so we apply CSS scale on top of the old image.
+    const cssScale = rendered ? 1 : state.currentScale;
+    state.canvas.style.transform = `translate(${state.posX}px, ${state.posY}px) scale(${cssScale})`;
 }
 
-// Fixed Pinch-to-Zoom Math (Focus on finger center)
+// Flawless Pinch Math
 function setupTouchGestures(paneId) {
     const state = panesState[paneId];
     const wrapper = state.wrapper;
-    const canvas = state.canvas;
     
-    let initialDistance = 0, initialScale = 1;
+    let initialDistance = 0;
     let isPinching = false;
     let startX, startY, initialPosX, initialPosY;
     let pinchCenterX, pinchCenterY;
@@ -315,9 +280,7 @@ function setupTouchGestures(paneId) {
         if (e.touches.length === 2) {
             isPinching = true;
             initialDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            initialScale = state.currentScale;
             
-            // Calculate center point between two fingers relative to the wrapper
             const rect = wrapper.getBoundingClientRect();
             pinchCenterX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
             pinchCenterY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
@@ -336,33 +299,34 @@ function setupTouchGestures(paneId) {
         if (e.touches.length === 2 && isPinching) {
             const currentDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const scaleChange = currentDistance / initialDistance;
-            let tempScale = initialScale * scaleChange;
             
-            if (tempScale < 0.5) tempScale = 0.5;
-            if (tempScale > 20) tempScale = 20;
-
-            // Math to keep the zoom focused on the pinch center
-            const ratio = tempScale / state.currentScale;
-            state.posX = pinchCenterX - ratio * (pinchCenterX - state.posX);
-            state.posY = pinchCenterY - ratio * (pinchCenterY - state.posY);
-            state.currentScale = tempScale;
-
-            applyTransform(state);
+            // Magic formula to zoom exactly towards the pinch center without jumping
+            const newPosX = pinchCenterX - (pinchCenterX - state.posX) * scaleChange;
+            const newPosY = pinchCenterY - (pinchCenterY - state.posY) * scaleChange;
+            
+            state.posX = newPosX;
+            state.posY = newPosY;
+            state.currentScale = scaleChange;
+            
+            applyTransform(state, false);
+            
+            // Update initial values for the NEXT frame of movement
+            initialDistance = currentDistance;
             
         } else if (e.touches.length === 1 && !isPinching) {
             state.posX = initialPosX + (e.touches[0].clientX - startX);
             state.posY = initialPosY + (e.touches[0].clientY - startY);
-            applyTransform(state);
+            applyTransform(state, false);
         }
     }, {passive: false});
 
     wrapper.addEventListener('touchend', (e) => {
         if (isPinching && e.touches.length < 2) {
             isPinching = false;
-            // Re-render in high quality once user stops pinching
-            state.scale = state.currentScale * state.baseScale;
+            // Bake the temporary CSS zoom into the absolute scale and re-render sharp
+            state.scale = state.scale * state.currentScale;
             state.currentScale = 1.0; 
-            renderPage(paneId, true);
+            renderPage(paneId);
         }
     });
 }
