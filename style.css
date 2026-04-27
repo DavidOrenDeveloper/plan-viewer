@@ -122,6 +122,7 @@ canvas { transform-origin: center center; box-shadow: 0 0 20px rgba(0,0,0,0.8); 
     .close-sidebar-btn { display: none; }
     .canvases-container { flex-direction: row; } /* Horizontal split on desktop */
 }
+
 /* Modal (Move Dialog) */
 .modal {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
