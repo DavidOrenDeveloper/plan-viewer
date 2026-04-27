@@ -16,6 +16,7 @@
             <button class="icon-btn" id="menuToggle"><span class="material-icons">menu</span></button>
             <h1 class="app-title">PlanViewer</h1>
             <div class="header-actions">
+                <button class="icon-btn" id="fullScreenBtn" title="מסך מלא"><span class="material-icons">fullscreen</span></button>
                 <button class="icon-btn" id="resetZoomBtn" title="התאם למסך"><span class="material-icons">fit_screen</span></button>
                 <button class="icon-btn" id="splitScreenBtn"><span class="material-icons">splitscreen</span></button>
             </div>
@@ -54,6 +55,10 @@
             <button class="fab" id="uploadFab" title="העלה תוכניות">
                 <span class="material-icons">add</span>
                 <input type="file" id="fileInput" accept="application/pdf" multiple hidden>
+            </button>
+
+            <button class="exit-fullscreen-btn hidden" id="exitFullScreenBtn" title="צא ממסך מלא">
+                <span class="material-icons">close_fullscreen</span>
             </button>
         </main>
     </div>
