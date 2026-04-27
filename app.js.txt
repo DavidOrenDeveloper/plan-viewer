@@ -1,0 +1,157 @@
+// PDF.js Setup
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+let filesData = {}; 
+let activePaneId = 1;
+let splitMode = false;
+
+// State for each pane
+const panesState = {
+    1: { pdfDoc: null, pageNum: 1, scale: 1.5, canvas: document.getElementById('pdfCanvas1') },
+    2: { pdfDoc: null, pageNum: 1, scale: 1.5, canvas: document.getElementById('pdfCanvas2') }
+};
+
+// UI Elements
+const folderInput = document.getElementById('folderInput');
+const fileTree = document.getElementById('fileTree');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+const zoomLevelText = document.getElementById('zoomLevel');
+const splitScreenBtn = document.getElementById('splitScreenBtn');
+
+// 1. Handle Local Folder Selection (Fast Loading)
+folderInput.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (files.length === 0) return;
+    
+    fileTree.innerHTML = ''; // Clear tree
+    filesData = {};
+
+    // Group files by folder (simple 1-level deep for this example)
+    const folders = {};
+    
+    for (let file of files) {
+        if (file.type === "application/pdf") {
+            const pathParts = file.webkitRelativePath.split('/');
+            const folderName = pathParts.length > 1 ? pathParts[pathParts.length - 2] : 'ראשי';
+            
+            if (!folders[folderName]) folders[folderName] = [];
+            folders[folderName].push(file);
+        }
+    }
+
+    // Build UI Tree
+    for (const [folderName, pdfFiles] of Object.entries(folders)) {
+        const folderDiv = document.createElement('div');
+        folderDiv.className = 'tree-item folder';
+        folderDiv.innerHTML = `<span class="material-icons">folder</span> ${folderName}`;
+        fileTree.appendChild(folderDiv);
+
+        pdfFiles.forEach(file => {
+            const fileId = URL.createObjectURL(file); // Insanely fast local URL
+            filesData[fileId] = file;
+
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'tree-item file';
+            fileDiv.innerHTML = `<span class="material-icons">description</span> ${file.name}`;
+            fileDiv.onclick = () => loadPdfToActivePane(fileId);
+            fileTree.appendChild(fileDiv);
+        });
+    }
+});
+
+// 2. Pane Selection (For Split Screen)
+window.setActivePane = function(paneId) {
+    activePaneId = paneId;
+    document.getElementById('pane1').classList.remove('active-pane');
+    document.getElementById('pane2').classList.remove('active-pane');
+    document.getElementById(`pane${paneId}`).classList.add('active-pane');
+    updateZoomText();
+};
+
+// 3. Toggle Split Screen
+splitScreenBtn.addEventListener('click', () => {
+    splitMode = !splitMode;
+    const pane2 = document.getElementById('pane2');
+    if (splitMode) {
+        pane2.classList.remove('hidden');
+        splitScreenBtn.classList.add('active');
+        setActivePane(2); // Auto focus new pane
+    } else {
+        pane2.classList.add('hidden');
+        splitScreenBtn.classList.remove('active');
+        setActivePane(1);
+    }
+});
+
+// 4. PDF Rendering Logic (Vector Sharpness on Zoom)
+async function loadPdfToActivePane(fileUrl) {
+    const state = panesState[activePaneId];
+    try {
+        const loadingTask = pdfjsLib.getDocument(fileUrl);
+        state.pdfDoc = await loadingTask.promise;
+        state.pageNum = 1;
+        state.scale = 1.5; // Reset scale on new file
+        renderPage(activePaneId);
+    } catch (error) {
+        console.error("Error loading PDF:", error);
+    }
+}
+
+async function renderPage(paneId) {
+    const state = panesState[paneId];
+    if (!state.pdfDoc) return;
+
+    const page = await state.pdfDoc.getPage(state.pageNum);
+    const viewport = page.getViewport({ scale: state.scale });
+
+    const canvas = state.canvas;
+    const ctx = canvas.getContext('2d');
+    
+    // High-res rendering setup
+    const outputScale = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = Math.floor(viewport.width) + "px";
+    canvas.style.height = Math.floor(viewport.height) + "px";
+
+    const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+    const renderContext = {
+        canvasContext: ctx,
+        transform: transform,
+        viewport: viewport
+    };
+
+    updateZoomText();
+    await page.render(renderContext).promise;
+}
+
+// 5. Zoom Controls (Re-renders to keep PDF super sharp)
+function handleZoom(delta) {
+    const state = panesState[activePaneId];
+    if (!state.pdfDoc) return;
+    
+    // Limits: Max zoom x10 (insane zoom), Min zoom x0.5
+    let newScale = state.scale + delta;
+    if (newScale > 10) newScale = 10;
+    if (newScale < 0.5) newScale = 0.5;
+    
+    state.scale = newScale;
+    renderPage(activePaneId);
+}
+
+zoomInBtn.onclick = () => handleZoom(0.5);
+zoomOutBtn.onclick = () => handleZoom(-0.5);
+
+function updateZoomText() {
+    const state = panesState[activePaneId];
+    zoomLevelText.innerText = Math.round(state.scale * 100) + '%';
+}
+
+// Register PWA Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js');
+    });
+}

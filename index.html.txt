@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PlanViewer Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>PlanViewer</h2>
+                <label class="btn outline" title="טען תיקיית פרויקט">
+                    <span class="material-icons">create_new_folder</span>
+                    <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+                </label>
+            </div>
+            <div class="file-tree" id="fileTree">
+                <div class="empty-state">טען תיקייה כדי להתחיל</div>
+            </div>
+        </aside>
+
+        <main class="viewer-area">
+            <header class="toolbar">
+                <div class="tools-group">
+                    <button class="btn" id="zoomOutBtn" title="התרחק"><span class="material-icons">zoom_out</span></button>
+                    <span id="zoomLevel">100%</span>
+                    <button class="btn" id="zoomInBtn" title="התקרב"><span class="material-icons">zoom_in</span></button>
+                </div>
+                <div class="tools-group">
+                    <button class="btn" id="splitScreenBtn" title="מסך מפוצל"><span class="material-icons">splitscreen</span></button>
+                </div>
+            </header>
+            
+            <div class="canvases-container" id="canvasesContainer">
+                <div class="pane active-pane" id="pane1" onclick="setActivePane(1)">
+                    <div class="pane-badge">תצוגה 1</div>
+                    <canvas id="pdfCanvas1"></canvas>
+                </div>
+                <div class="pane hidden" id="pane2" onclick="setActivePane(2)">
+                    <div class="pane-badge">תצוגה 2</div>
+                    <canvas id="pdfCanvas2"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
