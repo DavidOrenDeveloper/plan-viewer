@@ -46,30 +46,44 @@ body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidd
     border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
 }
 
-.sidebar-header { padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; }
+.sidebar-header { padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
 .sidebar-actions { padding: 10px; display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); }
 
 .action-btn {
     flex: 1; background: var(--accent-color); color: white; border: none; padding: 8px; border-radius: 6px;
     display: flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer; font-size: 14px;
 }
-.action-btn.outline { background: transparent; border: 1px solid var(--accent-color); color: var(--accent-color); }
 
-.file-tree { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 5px; }
+/* Tree Structure */
+.file-tree { flex: 1; overflow-y: auto; padding: 10px; }
+.tree-node { display: flex; flex-direction: column; }
+.tree-children { margin-right: 15px; border-right: 1px solid var(--border-color); padding-right: 5px; display: none; }
+.tree-children.open { display: block; }
 
-.file-tree.list-view .item {
-    display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.03);
-    border-radius: 8px; cursor: pointer;
+.item {
+    display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03);
+    border-radius: 6px; cursor: pointer; margin-bottom: 5px;
 }
-.file-tree.list-view .item-info { display: flex; align-items: center; gap: 10px; pointer-events: none; }
+.item-info { display: flex; align-items: center; gap: 8px; pointer-events: none; flex: 1; overflow: hidden; }
+.item-info .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-toggle { cursor: pointer; transition: transform 0.2s; font-size: 20px; color: var(--text-main); }
+.folder-toggle.open { transform: rotate(90deg); }
 
-.file-tree.grid-view { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+/* Grid View Enhancements */
+.file-tree.grid-view { display: flex; flex-wrap: wrap; gap: 10px; }
+.file-tree.grid-view .tree-children { display: contents; } /* Flattens children for grid */
 .file-tree.grid-view .item {
-    width: 48%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 15px 5px; background: rgba(255,255,255,0.03); border-radius: 8px; cursor: pointer; text-align: center;
+    width: 47%; flex-direction: column; align-items: stretch; justify-content: space-between;
+    padding: 10px; text-align: center; background: rgba(255,255,255,0.05); border-radius: 8px;
 }
-.file-tree.grid-view .item .material-icons { font-size: 40px; margin-bottom: 10px; pointer-events: none; }
-.file-tree.grid-view .item-actions { margin-top: 10px; }
+.file-tree.grid-view .item-info { flex-direction: column; }
+.file-tree.grid-view .folder-toggle { display: none; }
+.file-tree.grid-view .item-actions { text-align: left; width: 100%; margin-top: 5px; }
+
+/* Thumbnails */
+.pdf-thumb { width: 100%; height: 80px; object-fit: contain; background: #fff; border-radius: 4px; margin-bottom: 5px; display: none; }
+.file-tree.grid-view .pdf-thumb { display: block; }
+.file-tree.grid-view .pdf-icon-default { display: none; }
 
 .item.folder .material-icons { color: #facc15; }
 .item.file .material-icons { color: #f87171; }
@@ -95,18 +109,15 @@ canvas { position: absolute; transform-origin: 0 0; }
     display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
     cursor: pointer; z-index: 40; transition: opacity 0.3s;
 }
-.fab .material-icons { font-size: 30px; }
 
-/* Fullscreen Mode Styles */
 body.fullscreen-active .mobile-header { display: none; }
 body.fullscreen-active .fab { display: none; }
-body.fullscreen-active .sidebar { z-index: 0; } /* Hide sidebar completely in FS */
+body.fullscreen-active .sidebar { z-index: 0; } 
 
 .exit-fullscreen-btn {
     position: absolute; top: 20px; left: 20px; width: 50px; height: 50px;
     background-color: rgba(0,0,0,0.6); color: white; border: 1px solid var(--border-color); border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200;
-    backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200; backdrop-filter: blur(5px);
 }
 .exit-fullscreen-btn.hidden { display: none; }
 
@@ -136,10 +147,7 @@ body.fullscreen-active .sidebar { z-index: 0; } /* Hide sidebar completely in FS
     background: var(--bg-panel); padding: 20px; border-radius: 12px; width: 90%; max-width: 400px;
     border: 1px solid var(--border-color);
 }
-.modal-select {
-    width: 100%; padding: 10px; margin: 15px 0; background: var(--bg-dark); color: var(--text-light);
-    border: 1px solid var(--border-color); border-radius: 6px; font-size: 16px;
-}
+.modal-select { width: 100%; padding: 10px; margin: 15px 0; background: var(--bg-dark); color: var(--text-light); border: 1px solid var(--border-color); border-radius: 6px; font-size: 16px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .btn.cancel { background: transparent; color: var(--text-main); border: 1px solid var(--border-color); }
