@@ -1,9 +1,15 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-let virtualFileSystem = { "root": {} }; 
-let currentPath = "root";
+// --- NEW VFS STRUCTURE ---
+// Supports infinite nested folders.
+let vfs = {
+    "root": { id: "root", type: "folder", name: "ראשי", parentId: null }
+};
+
 let activePaneId = 1;
 let splitMode = false;
+let allExpanded = false;
+let expandedFolders = new Set(["root"]);
 
 const panesState = {
     1: { pdfDoc: null, pageNum: 1, scale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas1'), wrapper: document.getElementById('wrapper1'), posX: 0, posY: 0 },
@@ -16,14 +22,16 @@ const contextMenu = document.getElementById('contextMenu');
 const moveModal = document.getElementById('moveModal');
 
 async function initApp() {
-    const savedVFS = await localforage.getItem('vfs');
-    if (savedVFS) virtualFileSystem = savedVFS;
+    const savedVFS = await localforage.getItem('vfsDB');
+    if (savedVFS && savedVFS["root"]) {
+        vfs = savedVFS;
+    }
     renderFileTree();
 }
 
-async function saveVFS() { await localforage.setItem('vfs', virtualFileSystem); }
+async function saveVFS() { await localforage.setItem('vfsDB', vfs); }
 
-// --- UI Logic & Fullscreen ---
+// --- UI Logic ---
 document.getElementById('menuToggle').onclick = () => sidebar.classList.add('open');
 document.getElementById('closeSidebar').onclick = () => sidebar.classList.remove('open');
 
@@ -34,17 +42,12 @@ document.getElementById('splitScreenBtn').onclick = () => {
     setActivePane(splitMode ? 2 : 1);
 };
 
-// Fullscreen Logic
 document.getElementById('fullScreenBtn').onclick = () => {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(err => console.log(err));
-    }
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err => console.log(err));
 };
-
 document.getElementById('exitFullScreenBtn').onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
 };
-
 document.addEventListener('fullscreenchange', () => {
     if (document.fullscreenElement) {
         document.body.classList.add('fullscreen-active');
@@ -55,11 +58,7 @@ document.addEventListener('fullscreenchange', () => {
     }
 });
 
-document.getElementById('resetZoomBtn').onclick = () => {
-    if(panesState[activePaneId].pdfDoc) {
-        fitToScreen(activePaneId);
-    }
-};
+document.getElementById('resetZoomBtn').onclick = () => { if(panesState[activePaneId].pdfDoc) fitToScreen(activePaneId); };
 
 window.setActivePane = function(paneId) {
     activePaneId = paneId;
@@ -71,84 +70,131 @@ window.setActivePane = function(paneId) {
 document.getElementById('listViewBtn').onclick = () => { fileTree.className = 'file-tree list-view'; document.getElementById('listViewBtn').classList.add('active'); document.getElementById('gridViewBtn').classList.remove('active'); };
 document.getElementById('gridViewBtn').onclick = () => { fileTree.className = 'file-tree grid-view'; document.getElementById('gridViewBtn').classList.add('active'); document.getElementById('listViewBtn').classList.remove('active'); };
 
+document.getElementById('expandCollapseBtn').onclick = () => {
+    allExpanded = !allExpanded;
+    if(allExpanded) {
+        Object.keys(vfs).forEach(id => { if(vfs[id].type === 'folder') expandedFolders.add(id); });
+        document.getElementById('expandCollapseBtn').innerHTML = '<span class="material-icons">unfold_less</span>';
+    } else {
+        expandedFolders.clear();
+        expandedFolders.add("root");
+        document.getElementById('expandCollapseBtn').innerHTML = '<span class="material-icons">unfold_more</span>';
+    }
+    renderFileTree();
+};
+
+// --- PDF Thumbnail Generator ---
+async function generateThumbnail(arrayBuffer) {
+    try {
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const canvas = document.createElement('canvas');
+        const viewport = page.getViewport({ scale: 0.3 });
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+        return canvas.toDataURL('image/jpeg', 0.6);
+    } catch(e) { return null; }
+}
+
+// --- Upload Logic ---
 document.getElementById('uploadFab').onclick = () => document.getElementById('fileInput').click();
 
 document.getElementById('fileInput').onchange = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
+    
+    // Always upload to the currently focused folder, or root if none
+    const targetParent = (selectedItemId && vfs[selectedItemId] && vfs[selectedItemId].type === 'folder') ? selectedItemId : "root";
+
     for (let file of files) {
         const fileId = 'file_' + Date.now() + Math.floor(Math.random()*1000);
         const arrayBuffer = await file.arrayBuffer();
         await localforage.setItem(fileId, arrayBuffer);
-        if(!virtualFileSystem[currentPath]) virtualFileSystem[currentPath] = {};
-        virtualFileSystem[currentPath][fileId] = { name: file.name, type: 'pdf' };
+        
+        const thumbData = await generateThumbnail(arrayBuffer); // Create thumbnail!
+
+        vfs[fileId] = { id: fileId, type: 'file', name: file.name, parentId: targetParent, thumb: thumbData };
     }
+    
+    expandedFolders.add(targetParent); // Auto open folder we uploaded to
     await saveVFS();
     renderFileTree();
 };
 
 document.getElementById('newFolderBtn').onclick = () => {
     const folderName = prompt("שם התיקייה החדשה:");
-    if (folderName && !virtualFileSystem[folderName]) {
-        virtualFileSystem[folderName] = {};
+    if (folderName) {
+        const folderId = 'folder_' + Date.now();
+        const targetParent = (selectedItemId && vfs[selectedItemId] && vfs[selectedItemId].type === 'folder') ? selectedItemId : "root";
+        vfs[folderId] = { id: folderId, type: 'folder', name: folderName, parentId: targetParent };
+        expandedFolders.add(targetParent);
         saveVFS();
         renderFileTree();
     }
 };
 
-// --- File Tree Rendering (Fixed Click Areas) ---
+// --- Tree View Rendering ---
 function renderFileTree() {
     fileTree.innerHTML = '';
-    const goBackBtn = document.getElementById('goBackBtn');
+    renderNode("root", fileTree);
+}
+
+function renderNode(nodeId, container) {
+    const children = Object.values(vfs).filter(n => n.parentId === nodeId);
     
-    if (currentPath !== "root") {
-        goBackBtn.style.display = 'block';
-        goBackBtn.onclick = () => { currentPath = "root"; renderFileTree(); };
-    } else {
-        goBackBtn.style.display = 'none';
-    }
-
-    const currentItems = virtualFileSystem[currentPath] || {};
-
-    if (currentPath === "root") {
-        Object.keys(virtualFileSystem).forEach(key => {
-            if (key === "root") return;
-            const div = document.createElement('div');
-            div.className = 'item folder';
-            // Click anywhere on the row except the 3 dots
-            div.onclick = (e) => { if(!e.target.closest('.item-actions')) openFolder(key); };
-            
-            div.innerHTML = `
-                <div class="item-info"><span class="material-icons">folder</span> <span class="name">${key}</span></div>
-                <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${key}', '${key}', 'folder')">more_vert</span></div>
-            `;
-            fileTree.appendChild(div);
-        });
-    }
-
-    Object.entries(currentItems).forEach(([id, meta]) => {
+    children.forEach(child => {
         const div = document.createElement('div');
-        div.className = 'item file';
-        // Click anywhere on the row except the 3 dots
-        div.onclick = (e) => { if(!e.target.closest('.item-actions')) openFile(id); };
-
-        div.innerHTML = `
-            <div class="item-info"><span class="material-icons">picture_as_pdf</span> <span class="name">${meta.name}</span></div>
-            <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${id}', '${meta.name}', 'file')">more_vert</span></div>
-        `;
-        fileTree.appendChild(div);
+        div.className = 'tree-node';
+        
+        if (child.type === 'folder') {
+            const isOpen = expandedFolders.has(child.id);
+            div.innerHTML = `
+                <div class="item folder" onclick="toggleFolder('${child.id}')">
+                    <div class="item-info">
+                        <span class="material-icons folder-toggle ${isOpen ? 'open' : ''}">chevron_left</span>
+                        <span class="material-icons">folder</span> 
+                        <span class="name">${child.name}</span>
+                    </div>
+                    <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${child.id}')">more_vert</span></div>
+                </div>
+                <div class="tree-children ${isOpen ? 'open' : ''}" id="children_${child.id}"></div>
+            `;
+            container.appendChild(div);
+            renderNode(child.id, document.getElementById(`children_${child.id}`));
+        } else {
+            const thumbHtml = child.thumb ? `<img src="${child.thumb}" class="pdf-thumb">` : '';
+            div.innerHTML = `
+                <div class="item file">
+                    ${thumbHtml}
+                    <div class="item-info" onclick="openFile('${child.id}')">
+                        <span class="material-icons pdf-icon-default">picture_as_pdf</span> 
+                        <span class="name">${child.name}</span>
+                    </div>
+                    <div class="item-actions"><span class="material-icons more-btn" onclick="showContextMenu(event, '${child.id}')">more_vert</span></div>
+                </div>
+            `;
+            container.appendChild(div);
+        }
     });
 }
 
-window.openFolder = function(folderName) { currentPath = folderName; renderFileTree(); };
-window.openFile = function(fileId) { loadPdfToActivePane(fileId); if(window.innerWidth < 768) sidebar.classList.remove('open'); };
+window.toggleFolder = function(folderId) {
+    if(expandedFolders.has(folderId)) expandedFolders.delete(folderId);
+    else expandedFolders.add(folderId);
+    // Mark as selected context so uploads go here
+    selectedItemId = folderId; 
+    renderFileTree();
+};
 
-// --- Context Menu & Move Logic ---
-let selectedItemId = null, selectedItemType = null, selectedItemName = null;
+window.openFile = function(fileId) {
+    loadPdfToActivePane(fileId);
+    if(window.innerWidth < 768) sidebar.classList.remove('open');
+};
 
-window.showContextMenu = function(e, id, name, type) {
+// --- Context Menu & Nested Move Logic ---
+window.showContextMenu = function(e, id) {
     e.stopPropagation();
-    selectedItemId = id; selectedItemType = type; selectedItemName = name;
+    selectedItemId = id; 
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -158,50 +204,52 @@ document.addEventListener('click', () => contextMenu.classList.add('hidden'));
 
 document.getElementById('menuDelete').onclick = async () => {
     if(confirm('למחוק?')) {
-        if(selectedItemType === 'file') {
-            delete virtualFileSystem[currentPath][selectedItemId];
-            await localforage.removeItem(selectedItemId);
-        } else {
-            for(let fId in virtualFileSystem[selectedItemId]) await localforage.removeItem(fId);
-            delete virtualFileSystem[selectedItemId];
-        }
+        await deleteNodeAndChildren(selectedItemId);
         await saveVFS(); renderFileTree();
     }
 };
 
+async function deleteNodeAndChildren(nodeId) {
+    const children = Object.values(vfs).filter(n => n.parentId === nodeId);
+    for(let child of children) await deleteNodeAndChildren(child.id);
+    if(vfs[nodeId].type === 'file') await localforage.removeItem(nodeId);
+    delete vfs[nodeId];
+}
+
 document.getElementById('menuRename').onclick = async () => {
-    const newName = prompt('הכנס שם חדש:', selectedItemName);
+    const newName = prompt('הכנס שם חדש:', vfs[selectedItemId].name);
     if(newName) {
-        if(selectedItemType === 'file') virtualFileSystem[currentPath][selectedItemId].name = newName;
-        else { virtualFileSystem[newName] = virtualFileSystem[selectedItemId]; delete virtualFileSystem[selectedItemId]; }
+        vfs[selectedItemId].name = newName;
         await saveVFS(); renderFileTree();
     }
 };
 
 document.getElementById('menuMove').onclick = () => {
-    if(selectedItemType === 'folder') return alert('לא ניתן להזיז תיקיות כרגע.');
     const select = document.getElementById('folderSelect');
     select.innerHTML = '<option value="root">ראשי</option>';
-    Object.keys(virtualFileSystem).forEach(folder => {
-        if(folder !== 'root') select.innerHTML += `<option value="${folder}">${folder}</option>`;
+    
+    // Show all folders except the selected one (can't move folder into itself)
+    Object.values(vfs).forEach(node => {
+        if(node.type === 'folder' && node.id !== 'root' && node.id !== selectedItemId) {
+            select.innerHTML += `<option value="${node.id}">${node.name}</option>`;
+        }
     });
     moveModal.classList.remove('hidden');
 };
 
 document.getElementById('cancelMoveBtn').onclick = () => moveModal.classList.add('hidden');
 document.getElementById('confirmMoveBtn').onclick = async () => {
-    const targetFolder = document.getElementById('folderSelect').value;
-    if(targetFolder !== currentPath) {
-        virtualFileSystem[targetFolder][selectedItemId] = virtualFileSystem[currentPath][selectedItemId];
-        delete virtualFileSystem[currentPath][selectedItemId];
-        currentPath = targetFolder; // Jump to target folder
+    const targetFolderId = document.getElementById('folderSelect').value;
+    if(targetFolderId !== vfs[selectedItemId].parentId) {
+        vfs[selectedItemId].parentId = targetFolderId;
+        expandedFolders.add(targetFolderId); // Auto expand the folder we moved it to
         await saveVFS();
         renderFileTree();
     }
     moveModal.classList.add('hidden');
 };
 
-// --- Rock Solid PDF Engine & Pinch-to-Zoom Math ---
+// --- PERFECTED PINCH TO ZOOM MATH ---
 async function loadPdfToActivePane(fileId) {
     const state = panesState[activePaneId];
     try {
@@ -221,13 +269,11 @@ async function fitToScreen(paneId) {
     const unscaledViewport = page.getViewport({ scale: 1 });
     const wrapperRect = state.wrapper.getBoundingClientRect();
     
-    // Fit to width or height perfectly
     const scaleToFit = Math.min(wrapperRect.width / unscaledViewport.width, wrapperRect.height / unscaledViewport.height);
     
     state.scale = scaleToFit;
     state.currentScale = 1.0;
     
-    // Center it
     state.posX = (wrapperRect.width - (unscaledViewport.width * scaleToFit)) / 2;
     state.posY = (wrapperRect.height - (unscaledViewport.height * scaleToFit)) / 2;
     
@@ -239,8 +285,6 @@ async function renderPage(paneId) {
     if (!state.pdfDoc) return;
 
     const page = await state.pdfDoc.getPage(state.pageNum);
-    
-    // We render at the exact scale we need for crystal clear quality
     const renderScale = state.scale * state.currentScale; 
     const viewport = page.getViewport({ scale: renderScale });
 
@@ -250,30 +294,27 @@ async function renderPage(paneId) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     
-    // Reset CSS sizing to match physical rendering
     canvas.style.width = viewport.width + "px";
     canvas.style.height = viewport.height + "px";
     
-    applyTransform(state, true); // True means reset CSS scale to 1 because it's baked into the render
+    applyTransform(state, true); 
 
     await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 }
 
 function applyTransform(state, rendered = false) {
-    // If rendered = true, the scale is baked into the canvas.width, so CSS scale is 1.
-    // Otherwise, we are mid-pinch, so we apply CSS scale on top of the old image.
     const cssScale = rendered ? 1 : state.currentScale;
     state.canvas.style.transform = `translate(${state.posX}px, ${state.posY}px) scale(${cssScale})`;
 }
 
-// Flawless Pinch Math
 function setupTouchGestures(paneId) {
     const state = panesState[paneId];
     const wrapper = state.wrapper;
     
     let initialDistance = 0;
     let isPinching = false;
-    let startX, startY, initialPosX, initialPosY;
+    let startX, startY;
+    let initialPosX, initialPosY; // Critical fix: store initial pos BEFORE pinch
     let pinchCenterX, pinchCenterY;
 
     wrapper.addEventListener('touchstart', (e) => {
@@ -284,6 +325,10 @@ function setupTouchGestures(paneId) {
             const rect = wrapper.getBoundingClientRect();
             pinchCenterX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
             pinchCenterY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
+
+            // FIX: Record the exact position the canvas was at when the pinch started
+            initialPosX = state.posX;
+            initialPosY = state.posY;
 
         } else if (e.touches.length === 1) {
             startX = e.touches[0].clientX;
@@ -300,18 +345,13 @@ function setupTouchGestures(paneId) {
             const currentDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const scaleChange = currentDistance / initialDistance;
             
-            // Magic formula to zoom exactly towards the pinch center without jumping
-            const newPosX = pinchCenterX - (pinchCenterX - state.posX) * scaleChange;
-            const newPosY = pinchCenterY - (pinchCenterY - state.posY) * scaleChange;
-            
-            state.posX = newPosX;
-            state.posY = newPosY;
+            // FIX: Calculate new position based on the INITIAL position, not the current one.
+            // This prevents the exponential "flying to space" bug.
+            state.posX = pinchCenterX - (pinchCenterX - initialPosX) * scaleChange;
+            state.posY = pinchCenterY - (pinchCenterY - initialPosY) * scaleChange;
             state.currentScale = scaleChange;
             
             applyTransform(state, false);
-            
-            // Update initial values for the NEXT frame of movement
-            initialDistance = currentDistance;
             
         } else if (e.touches.length === 1 && !isPinching) {
             state.posX = initialPosX + (e.touches[0].clientX - startX);
@@ -323,7 +363,7 @@ function setupTouchGestures(paneId) {
     wrapper.addEventListener('touchend', (e) => {
         if (isPinching && e.touches.length < 2) {
             isPinching = false;
-            // Bake the temporary CSS zoom into the absolute scale and re-render sharp
+            // Lock in the new scale and re-render sharp
             state.scale = state.scale * state.currentScale;
             state.currentScale = 1.0; 
             renderPage(paneId);
