@@ -4,7 +4,7 @@
     --border-color: #333;
     --text-main: #e0e0e0;
     --text-light: #fff;
-    --accent-color: #3b82f6; /* Modern blue */
+    --accent-color: #3b82f6;
     --accent-hover: #2563eb;
     --danger: #ef4444;
 }
@@ -15,7 +15,6 @@ body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidd
 
 .app-container { display: flex; flex-direction: column; height: 100vh; }
 
-/* Mobile Header */
 .mobile-header {
     display: flex; justify-content: space-between; align-items: center;
     background-color: var(--bg-panel); padding: 10px 15px; border-bottom: 1px solid var(--border-color);
@@ -32,7 +31,6 @@ body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidd
 .icon-btn:active { background: rgba(255,255,255,0.1); }
 .icon-btn.active { color: var(--accent-color); }
 
-/* Sidebar (Hidden on mobile by default) */
 .sidebar {
     position: absolute; top: 0; right: -300px; width: 280px; height: 100vh;
     background-color: var(--bg-panel); border-left: 1px solid var(--border-color);
@@ -57,31 +55,27 @@ body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidd
 }
 .action-btn.outline { background: transparent; border: 1px solid var(--accent-color); color: var(--accent-color); }
 
-/* File Tree Views */
 .file-tree { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 5px; }
 
-/* List View */
 .file-tree.list-view .item {
     display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.03);
     border-radius: 8px; cursor: pointer;
 }
-.file-tree.list-view .item-info { display: flex; align-items: center; gap: 10px; }
+.file-tree.list-view .item-info { display: flex; align-items: center; gap: 10px; pointer-events: none; }
 
-/* Grid View */
 .file-tree.grid-view { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
 .file-tree.grid-view .item {
     width: 48%; display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 15px 5px; background: rgba(255,255,255,0.03); border-radius: 8px; cursor: pointer; text-align: center;
 }
-.file-tree.grid-view .item .material-icons { font-size: 40px; margin-bottom: 10px; }
+.file-tree.grid-view .item .material-icons { font-size: 40px; margin-bottom: 10px; pointer-events: none; }
 .file-tree.grid-view .item-actions { margin-top: 10px; }
 
 .item.folder .material-icons { color: #facc15; }
 .item.file .material-icons { color: #f87171; }
 
-/* Main Viewer */
 .viewer-area { flex: 1; position: relative; display: flex; }
-.canvases-container { flex: 1; display: flex; flex-direction: column; } /* Vertical split on mobile */
+.canvases-container { flex: 1; display: flex; flex-direction: column; }
 
 .pane {
     flex: 1; position: relative; overflow: hidden; background: #000;
@@ -92,19 +86,30 @@ body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidd
 
 .pane-badge { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 6px; z-index: 10; }
 
-.canvas-wrapper { width: 100%; height: 100%; overflow: auto; display: flex; align-items: center; justify-content: center; touch-action: none; }
-canvas { transform-origin: center center; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+.canvas-wrapper { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; position: relative; }
+canvas { position: absolute; transform-origin: 0 0; }
 
-/* Floating Action Button (FAB) */
 .fab {
     position: absolute; bottom: 20px; right: 20px; width: 60px; height: 60px;
     background-color: var(--accent-color); color: white; border: none; border-radius: 50%;
     display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-    cursor: pointer; z-index: 40;
+    cursor: pointer; z-index: 40; transition: opacity 0.3s;
 }
 .fab .material-icons { font-size: 30px; }
 
-/* Context Menu */
+/* Fullscreen Mode Styles */
+body.fullscreen-active .mobile-header { display: none; }
+body.fullscreen-active .fab { display: none; }
+body.fullscreen-active .sidebar { z-index: 0; } /* Hide sidebar completely in FS */
+
+.exit-fullscreen-btn {
+    position: absolute; top: 20px; left: 20px; width: 50px; height: 50px;
+    background-color: rgba(0,0,0,0.6); color: white; border: 1px solid var(--border-color); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200;
+    backdrop-filter: blur(5px);
+}
+.exit-fullscreen-btn.hidden { display: none; }
+
 .context-menu {
     position: fixed; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 200; overflow: hidden; min-width: 150px;
@@ -114,16 +119,14 @@ canvas { transform-origin: center center; box-shadow: 0 0 20px rgba(0,0,0,0.8); 
 .menu-item:active { background: rgba(255,255,255,0.1); }
 .menu-item.danger { color: var(--danger); }
 
-/* Desktop Media Query */
 @media (min-width: 768px) {
     .app-container { flex-direction: row; }
     .mobile-header { display: none; }
     .sidebar { position: static; height: 100%; box-shadow: none; }
     .close-sidebar-btn { display: none; }
-    .canvases-container { flex-direction: row; } /* Horizontal split on desktop */
+    .canvases-container { flex-direction: row; }
 }
 
-/* Modal (Move Dialog) */
 .modal {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 300;
@@ -141,13 +144,3 @@ canvas { transform-origin: center center; box-shadow: 0 0 20px rgba(0,0,0,0.8); 
 .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .btn.cancel { background: transparent; color: var(--text-main); border: 1px solid var(--border-color); }
 .btn.confirm { background: var(--accent-color); color: white; }
-
-/* Canvas optimizations to prevent jumping/black screens */
-.canvas-wrapper {
-    position: relative; overflow: hidden; /* Prevent native scroll jumping */
-    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-}
-canvas {
-    position: absolute; transform-origin: 0 0; /* Changed to top-left for math accuracy */
-    transition: transform 0.1s ease-out; /* Smooth snapping */
-}
