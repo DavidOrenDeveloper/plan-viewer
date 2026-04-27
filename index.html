@@ -16,13 +16,12 @@
             <button class="icon-btn" id="menuToggle"><span class="material-icons">menu</span></button>
             <h1 class="app-title">PlanViewer</h1>
             <div class="header-actions">
-                <button class="icon-btn" id="fullScreenBtn"><span class="material-icons">fullscreen</span></button>
+                <button class="icon-btn" id="resetZoomBtn" title="התאם למסך"><span class="material-icons">fit_screen</span></button>
                 <button class="icon-btn" id="splitScreenBtn"><span class="material-icons">splitscreen</span></button>
             </div>
         </header>
 
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
+        <aside class="sidebar open" id="sidebar"> <div class="sidebar-header">
                 <h2>התוכניות שלי</h2>
                 <div class="view-toggles">
                     <button class="icon-btn active" id="listViewBtn"><span class="material-icons">view_list</span></button>
@@ -35,30 +34,25 @@
                 <button class="action-btn outline" id="goBackBtn" style="display:none;"><span class="material-icons">arrow_upward</span> חזור</button>
             </div>
 
-            <div class="file-tree list-view" id="fileTree">
-                </div>
+            <div class="file-tree list-view" id="fileTree"></div>
             <button class="close-sidebar-btn" id="closeSidebar"><span class="material-icons">close</span></button>
         </aside>
 
-        <main class="viewer-area">
+        <main class="viewer-area" id="viewerArea">
             <div class="canvases-container" id="canvasesContainer">
                 <div class="pane active-pane" id="pane1" onclick="setActivePane(1)">
                     <div class="pane-badge">מסך 1</div>
-                    <div class="canvas-wrapper" id="wrapper1">
-                        <canvas id="pdfCanvas1"></canvas>
-                    </div>
+                    <div class="canvas-wrapper" id="wrapper1"><canvas id="pdfCanvas1"></canvas></div>
                 </div>
                 <div class="pane hidden" id="pane2" onclick="setActivePane(2)">
                     <div class="pane-badge">מסך 2</div>
-                    <div class="canvas-wrapper" id="wrapper2">
-                        <canvas id="pdfCanvas2"></canvas>
-                    </div>
+                    <div class="canvas-wrapper" id="wrapper2"><canvas id="pdfCanvas2"></canvas></div>
                 </div>
             </div>
             
-            <button class="fab" id="uploadFab" title="העלה תוכנית לתיקייה זו">
+            <button class="fab" id="uploadFab" title="העלה תוכניות">
                 <span class="material-icons">add</span>
-                <input type="file" id="fileInput" accept="application/pdf" hidden>
+                <input type="file" id="fileInput" accept="application/pdf" multiple hidden>
             </button>
         </main>
     </div>
@@ -67,6 +61,17 @@
         <div class="menu-item" id="menuMove"><span class="material-icons">drive_file_move</span> העבר</div>
         <div class="menu-item" id="menuRename"><span class="material-icons">edit</span> שנה שם</div>
         <div class="menu-item danger" id="menuDelete"><span class="material-icons">delete</span> מחק</div>
+    </div>
+
+    <div id="moveModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>העבר אל תיקייה</h3>
+            <select id="folderSelect" class="modal-select"></select>
+            <div class="modal-actions">
+                <button class="btn cancel" id="cancelMoveBtn">ביטול</button>
+                <button class="btn confirm" id="confirmMoveBtn">העבר</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
