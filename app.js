@@ -53,6 +53,11 @@ window.setActivePane = function(paneId) {
     document.getElementById(`pane${paneId}`).classList.add('active-pane');
 };
 
+// View Toggles
+document.getElementById('listViewBtn').onclick = () => { fileTree.className = 'file-tree list-view'; document.getElementById('listViewBtn').classList.add('active'); document.getElementById('gridViewBtn').classList.remove('active'); };
+document.getElementById('gridViewBtn').onclick = () => { fileTree.className = 'file-tree grid-view'; document.getElementById('gridViewBtn').classList.add('active'); document.getElementById('listViewBtn').classList.remove('active'); };
+
+
 // --- Upload Multiple Files ---
 document.getElementById('uploadFab').onclick = () => document.getElementById('fileInput').click();
 
