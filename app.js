@@ -1,7 +1,6 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
 // --- NEW VFS STRUCTURE ---
-// Supports infinite nested folders.
 let vfs = {
     "root": { id: "root", type: "folder", name: "ראשי", parentId: null }
 };
@@ -10,6 +9,9 @@ let activePaneId = 1;
 let splitMode = false;
 let allExpanded = false;
 let expandedFolders = new Set(["root"]);
+
+// FIX: המשתנה הזה עבר ללמעלה כדי שלא יקריס את העלאת הקבצים ויצירת התיקיות
+let selectedItemId = null; 
 
 const panesState = {
     1: { pdfDoc: null, pageNum: 1, scale: 1.0, currentScale: 1.0, canvas: document.getElementById('pdfCanvas1'), wrapper: document.getElementById('wrapper1'), posX: 0, posY: 0 },
@@ -111,12 +113,12 @@ document.getElementById('fileInput').onchange = async (e) => {
         const arrayBuffer = await file.arrayBuffer();
         await localforage.setItem(fileId, arrayBuffer);
         
-        const thumbData = await generateThumbnail(arrayBuffer); // Create thumbnail!
+        const thumbData = await generateThumbnail(arrayBuffer);
 
         vfs[fileId] = { id: fileId, type: 'file', name: file.name, parentId: targetParent, thumb: thumbData };
     }
     
-    expandedFolders.add(targetParent); // Auto open folder we uploaded to
+    expandedFolders.add(targetParent); 
     await saveVFS();
     renderFileTree();
 };
@@ -181,7 +183,6 @@ function renderNode(nodeId, container) {
 window.toggleFolder = function(folderId) {
     if(expandedFolders.has(folderId)) expandedFolders.delete(folderId);
     else expandedFolders.add(folderId);
-    // Mark as selected context so uploads go here
     selectedItemId = folderId; 
     renderFileTree();
 };
@@ -224,14 +225,26 @@ document.getElementById('menuRename').onclick = async () => {
     }
 };
 
+// פונקציה חכמה שמונעת ממך להכניס תיקייה לתוך עצמה או לתוך ילדיה
+function isDescendant(potentialChildId, potentialParentId) {
+    let current = vfs[potentialChildId];
+    while (current && current.parentId) {
+        if (current.parentId === potentialParentId) return true;
+        current = vfs[current.parentId];
+    }
+    return false;
+}
+
 document.getElementById('menuMove').onclick = () => {
     const select = document.getElementById('folderSelect');
     select.innerHTML = '<option value="root">ראשי</option>';
     
-    // Show all folders except the selected one (can't move folder into itself)
     Object.values(vfs).forEach(node => {
         if(node.type === 'folder' && node.id !== 'root' && node.id !== selectedItemId) {
-            select.innerHTML += `<option value="${node.id}">${node.name}</option>`;
+            // מאפשר הצגת תיקייה רק אם היא לא הילד של התיקייה שאנחנו מעבירים
+            if (!isDescendant(node.id, selectedItemId)) {
+                select.innerHTML += `<option value="${node.id}">${node.name}</option>`;
+            }
         }
     });
     moveModal.classList.remove('hidden');
@@ -242,7 +255,7 @@ document.getElementById('confirmMoveBtn').onclick = async () => {
     const targetFolderId = document.getElementById('folderSelect').value;
     if(targetFolderId !== vfs[selectedItemId].parentId) {
         vfs[selectedItemId].parentId = targetFolderId;
-        expandedFolders.add(targetFolderId); // Auto expand the folder we moved it to
+        expandedFolders.add(targetFolderId); 
         await saveVFS();
         renderFileTree();
     }
@@ -314,7 +327,7 @@ function setupTouchGestures(paneId) {
     let initialDistance = 0;
     let isPinching = false;
     let startX, startY;
-    let initialPosX, initialPosY; // Critical fix: store initial pos BEFORE pinch
+    let initialPosX, initialPosY; 
     let pinchCenterX, pinchCenterY;
 
     wrapper.addEventListener('touchstart', (e) => {
@@ -326,7 +339,6 @@ function setupTouchGestures(paneId) {
             pinchCenterX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
             pinchCenterY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
 
-            // FIX: Record the exact position the canvas was at when the pinch started
             initialPosX = state.posX;
             initialPosY = state.posY;
 
@@ -345,8 +357,6 @@ function setupTouchGestures(paneId) {
             const currentDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const scaleChange = currentDistance / initialDistance;
             
-            // FIX: Calculate new position based on the INITIAL position, not the current one.
-            // This prevents the exponential "flying to space" bug.
             state.posX = pinchCenterX - (pinchCenterX - initialPosX) * scaleChange;
             state.posY = pinchCenterY - (pinchCenterY - initialPosY) * scaleChange;
             state.currentScale = scaleChange;
@@ -363,7 +373,6 @@ function setupTouchGestures(paneId) {
     wrapper.addEventListener('touchend', (e) => {
         if (isPinching && e.touches.length < 2) {
             isPinching = false;
-            // Lock in the new scale and re-render sharp
             state.scale = state.scale * state.currentScale;
             state.currentScale = 1.0; 
             renderPage(paneId);
